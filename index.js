@@ -35,6 +35,9 @@ const start = (async() => {
 
     const length = parseFloat(prompt(`${cs("red")}Set length in seconds (default: 60)${cs("green")} `)) || 60
 
+    const UA = prompt(`${cs("red")}Set user agent (default: Mozilla/5.0 (Win...)${cs("green")} `) || "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Safari/537.36"
+    console.log(`${cs("magenta")}${UA}`)
+
     if ((prompt(`${cs("red")}! ARE YOU SURE YOU WANT TO CONTINUE? !${cs("green")} `) || "yes") !== "yes") {
         console.log(cs("reset"))
         process.exit(0)
@@ -50,7 +53,7 @@ const start = (async() => {
     let testRes
 
     try {
-        testRes = await fetch(site, proxy ? { agent: new HttpsProxyAgent(proxy), signal: AbortSignal.timeout(9999999) } : {signal: AbortSignal.timeout(9999999)})
+        testRes = await fetch(site, proxy ? { agent: new HttpsProxyAgent(proxy), headers: {"User-Agent": UA} } : {headers: {"User-Agent": UA}})
     } catch(e) {
         console.log(`${cs("red")}! FATAL FETCH ERROR, CHECK CONF: ${e} !${cs("reset")}`)
         process.exit(1)
