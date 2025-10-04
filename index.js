@@ -18,7 +18,7 @@ function nl() {
     console.log()
 }
 
-console.clear()
+process.stdout.write('\u001b[2J\u001b[H'); 
 
 (async() => {
     const interval = parseInt( prompt(`${cs("red")}Set interval (default: 20) ${cs("green")} `))  || 20
