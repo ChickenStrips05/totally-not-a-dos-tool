@@ -17,6 +17,9 @@ function cs(color) {
 function nl() {
     console.log()
 }
+
+console.clear()
+
 (async() => {
     const interval = parseInt( prompt(`${cs("red")}Set interval (default: 20) ${cs("green")} `))  || 20
     console.log(`${cs("magenta")}${interval}${cs("reset")}`)
